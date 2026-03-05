@@ -1726,6 +1726,7 @@
         let lastSeenGuestIds = new Set(); // 用于检测新加入的访客，触发欢迎气泡
         let guestWelcomeInitialized = false;
         let inboxSinceSeq = 0;
+        let uiSyncTimer = null;
 
         // 状态控制栏函数（用于测试）
         function setState(state, detail) {
@@ -4512,6 +4513,16 @@ function toggleBrokerPanel() {
 
             fetchStatus();
             fetchGuestAgents();
+            fetchRpsInbox();
+
+            // Extra UI sync timer (independent of Phaser update loop)
+            if (!uiSyncTimer) {
+                uiSyncTimer = setInterval(() => {
+                    fetchGuestAgents();
+                    fetchRpsInbox();
+                    loadMemo();
+                }, 2000);
+            }
         }
 
         function update(time) {
