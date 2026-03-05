@@ -1682,6 +1682,7 @@
         const GUEST_AVATARS = ['guest_role_1','guest_role_2','guest_role_3','guest_role_4','guest_role_5','guest_role_6'];
         let guestTweens = {};  // agentId -> {move, name}
         let hiddenDemoNames = new Set();
+        const waitingReplyTargets = new Map(); // agentId -> expiresAt(ms)
         const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
         const FETCH_INTERVAL = 1000;
         const GUEST_AGENTS_FETCH_INTERVAL = 3500;
@@ -3382,7 +3383,19 @@ function toggleBrokerPanel() {
 
                 const statusText = statusMap[authStatus] || authStatus;
                 const stateText = stateMap[state] || state;
-                const subtitle = `${statusText} · ${stateText}`;
+                const availability = (agent.availability || '').toLowerCase();
+                const waitingEntry = waitingReplyTargets.get(agent.agentId);
+                let gameplayStatus = '';
+                if (waitingEntry && waitingEntry > Date.now()) {
+                    gameplayStatus = 'waiting_reply';
+                } else if (availability === 'in_game') {
+                    gameplayStatus = 'in_game';
+                } else if (availability === 'offline') {
+                    gameplayStatus = 'unavailable: offline';
+                }
+                const subtitle = gameplayStatus
+                    ? `${statusText} · ${stateText} · ${gameplayStatus}`
+                    : `${statusText} · ${stateText}`;
 
                 const pendingActions = `<button class="play-btn" onclick="challengeAgent('${agent.agentId}','${name}')">Play</button><button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
 

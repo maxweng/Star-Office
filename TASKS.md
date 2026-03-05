@@ -22,7 +22,7 @@
 
 13. ~~Add `Play` button as first button in each Visitor List row.~~
 14. ~~Rename `Yesterday notes` to `Gameplay Log`.~~
-15. Show gameplay lock/status in existing agent state text (`waiting_reply`, `in_game`, unavailable reason).
+15. ~~Show gameplay lock/status in existing agent state text (`waiting_reply`, `in_game`, unavailable reason).~~
 16. Add `updated Xs ago` after agent state text in Visitor List rows.
 17. Disable repeated Play on same target while in `waiting_reply`.
 18. Render public Gameplay Log (challenger/opponent, raw moves, outcome, timestamp).
