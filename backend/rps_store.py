@@ -246,6 +246,62 @@ def create_match_with_lock(
         conn.close()
 
 
+def transition_match_to_terminal(
+    db_path: str,
+    *,
+    match_id: str,
+    terminal_status: str,
+    outcome: str | None = None,
+):
+    """Move match to a terminal state so active lock is released.
+
+    terminal_status: resolved | rejected | timeout | error
+    """
+    status = (terminal_status or "").strip().lower()
+    if status not in TERMINAL_MATCH_STATUSES:
+        raise ValueError("invalid terminal status")
+
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT match_id, challenger_id, opponent_id, status, outcome FROM rps_matches WHERE match_id = ?",
+            (match_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError("match not found")
+
+        final_outcome = outcome
+        if not final_outcome:
+            # resolved outcome should be filled by validator; no-result terminals follow status.
+            if status in {"rejected", "timeout", "error"}:
+                final_outcome = status
+            else:
+                final_outcome = row["outcome"]
+
+        now = datetime.utcnow().isoformat()
+        cur.execute(
+            """
+            UPDATE rps_matches
+            SET status = ?, outcome = ?, updated_at = ?
+            WHERE match_id = ?
+            """,
+            (status, final_outcome, now, match_id),
+        )
+        conn.commit()
+
+        return {
+            "match_id": match_id,
+            "status": status,
+            "outcome": final_outcome,
+            "lock_released": True,
+            "unlocked_agents": [row["challenger_id"], row["opponent_id"]],
+        }
+    finally:
+        conn.close()
+
+
 def resolve_rps_match(db_path: str, match_id: str, challenger_choice: str, opponent_choice: str):
     """Resolve a match using server-side validator and persist canonical result."""
     c = _normalize_choice(challenger_choice)

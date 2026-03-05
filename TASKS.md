@@ -7,7 +7,7 @@
 3. ~~Create DB tables: `rps_matches`, `agent_messages`, `game_log`.~~
 4. ~~Implement server-side validator logic for RPS outcomes.~~
 5. ~~Implement match locking (single active match per agent).~~
-6. Implement terminal-state unlock (`resolved/rejected/timeout/error`).
+6. ~~Implement terminal-state unlock (`resolved/rejected/timeout/error`).~~
 
 ## P1 — Game APIs and reliability
 
