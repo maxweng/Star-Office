@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from datetime import datetime
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
@@ -86,5 +87,107 @@ def ensure_rps_schema(db_path: str):
         cur.execute("CREATE INDEX IF NOT EXISTS idx_game_log_match_id ON game_log(match_id)")
 
         conn.commit()
+    finally:
+        conn.close()
+
+
+VALID_CHOICES = {"rock", "paper", "scissors"}
+
+
+def _normalize_choice(choice: str | None) -> str | None:
+    if choice is None:
+        return None
+    c = str(choice).strip().lower()
+    if c in VALID_CHOICES:
+        return c
+    return None
+
+
+def compute_rps_outcome(challenger_choice: str, opponent_choice: str):
+    """Server-side RPS validator.
+
+    Returns: (outcome, winner_side)
+    - outcome: challenger_win | opponent_win | draw
+    - winner_side: challenger | opponent | None
+    """
+    c = _normalize_choice(challenger_choice)
+    o = _normalize_choice(opponent_choice)
+    if c is None or o is None:
+        raise ValueError("invalid choice; expected rock|paper|scissors")
+
+    if c == o:
+        return "draw", None
+
+    wins = {
+        ("rock", "scissors"),
+        ("scissors", "paper"),
+        ("paper", "rock"),
+    }
+    if (c, o) in wins:
+        return "challenger_win", "challenger"
+
+    return "opponent_win", "opponent"
+
+
+def resolve_rps_match(db_path: str, match_id: str, challenger_choice: str, opponent_choice: str):
+    """Resolve a match using server-side validator and persist canonical result."""
+    c = _normalize_choice(challenger_choice)
+    o = _normalize_choice(opponent_choice)
+    if c is None or o is None:
+        raise ValueError("invalid choice; expected rock|paper|scissors")
+
+    outcome, winner_side = compute_rps_outcome(c, o)
+
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT match_id, challenger_id, opponent_id, status FROM rps_matches WHERE match_id = ?",
+            (match_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError("match not found")
+
+        winner_id = None
+        if winner_side == "challenger":
+            winner_id = row["challenger_id"]
+        elif winner_side == "opponent":
+            winner_id = row["opponent_id"]
+
+        now = datetime.utcnow().isoformat()
+        cur.execute(
+            """
+            UPDATE rps_matches
+            SET challenger_choice = ?,
+                opponent_choice = ?,
+                status = ?,
+                outcome = ?,
+                winner_id = ?,
+                updated_at = ?
+            WHERE match_id = ?
+            """,
+            (c, o, "resolved", outcome, winner_id, now, match_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO game_log (
+                match_id, challenger_id, opponent_id,
+                challenger_move, opponent_move, outcome, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (match_id, row["challenger_id"], row["opponent_id"], c, o, outcome, now),
+        )
+
+        conn.commit()
+        return {
+            "match_id": match_id,
+            "status": "resolved",
+            "challenger_choice": c,
+            "opponent_choice": o,
+            "outcome": outcome,
+            "winner_id": winner_id,
+        }
     finally:
         conn.close()
