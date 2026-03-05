@@ -10,7 +10,7 @@ SESSIONS_FILE = Path("/root/.openclaw/agents/main/sessions/sessions.json")
 STATE_FILE = WORKSPACE / "Star-Office-UI" / "state.json"
 
 POLL_SECONDS = float(os.environ.get("STAR_BRIDGE_POLL_SECONDS", "3"))
-ACTIVE_SECONDS = float(os.environ.get("STAR_BRIDGE_ACTIVE_SECONDS", "120"))
+ACTIVE_SECONDS = float(os.environ.get("STAR_BRIDGE_ACTIVE_SECONDS", "15"))
 DETAIL_PREFIX = os.environ.get("STAR_BRIDGE_DETAIL_PREFIX", "OpenClaw auto-sync")
 
 
@@ -93,7 +93,9 @@ def main():
                 detail = f"{DETAIL_PREFIX}: idle"
 
             current = read_current_state()
-            if current != target_state or last_state != target_state:
+            # Always refresh when working so UI detail timestamp/age stays fresh;
+            # switch state immediately when target state changes.
+            if current != target_state or last_state != target_state or target_state == "writing":
                 write_state(target_state, detail)
                 last_state = target_state
         except Exception as e:
