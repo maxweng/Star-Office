@@ -524,6 +524,70 @@ def save_agents_state(agents):
     _store_save_agents_state(AGENTS_STATE_FILE, agents)
 
 
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
+
+def canonicalize_agents_roster(agents):
+    """Return a canonical shared roster snapshot for /agents consumers.
+
+    Guarantees:
+    - Main agent is always present exactly once.
+    - Non-main agents are de-duplicated by agentId.
+    - Output order is stable (main first, then recent non-main agents).
+    """
+    if not isinstance(agents, list):
+        agents = []
+
+    main_agent = None
+    dedup_non_main = {}
+
+    for raw in agents:
+        if not isinstance(raw, dict):
+            continue
+        agent = dict(raw)
+
+        if agent.get("isMain"):
+            if main_agent is None:
+                main_agent = agent
+            continue
+
+        agent_id = (agent.get("agentId") or "").strip()
+        if not agent_id:
+            # keep malformed records from fragmenting roster parity
+            continue
+
+        existing = dedup_non_main.get(agent_id)
+        if existing is None:
+            dedup_non_main[agent_id] = agent
+            continue
+
+        existing_dt = _parse_iso_datetime(existing.get("updated_at"))
+        current_dt = _parse_iso_datetime(agent.get("updated_at"))
+        if existing_dt is None or (current_dt is not None and current_dt >= existing_dt):
+            dedup_non_main[agent_id] = agent
+
+    if main_agent is None:
+        main_agent = dict(DEFAULT_AGENTS[0])
+
+    non_main = list(dedup_non_main.values())
+    non_main.sort(
+        key=lambda a: (
+            _parse_iso_datetime(a.get("updated_at")) or datetime.min,
+            a.get("name") or "",
+            a.get("agentId") or "",
+        ),
+        reverse=True,
+    )
+
+    return [main_agent] + non_main
+
+
 def load_asset_positions():
     return _store_load_asset_positions(ASSET_POSITIONS_FILE)
 
@@ -1046,7 +1110,7 @@ if os.path.exists(RUNTIME_CONFIG_FILE):
 @app.route("/agents", methods=["GET"])
 def get_agents():
     """Get full agents list (for multi-agent UI), with auto-cleanup on access"""
-    agents = load_agents_state()
+    agents = canonicalize_agents_roster(load_agents_state())
     now = datetime.now()
 
     cleaned_agents = []
@@ -1090,10 +1154,11 @@ def get_agents():
 
         cleaned_agents.append(a)
 
-    save_agents_state(cleaned_agents)
+    canonical_agents = canonicalize_agents_roster(cleaned_agents)
+    save_agents_state(canonical_agents)
     save_join_keys(keys_data)
 
-    return jsonify(cleaned_agents)
+    return jsonify(canonical_agents)
 
 
 @app.route("/agent-approve", methods=["POST"])
