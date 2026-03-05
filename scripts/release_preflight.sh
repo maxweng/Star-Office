@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-BASE_URL="${1:-http://127.0.0.1:18791}"
+BASE_URL="${1:-http://127.0.0.1:18790}"
 
 echo "[preflight] root=$ROOT_DIR"
 echo "[preflight] base_url=$BASE_URL"

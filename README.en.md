@@ -35,7 +35,7 @@ cd backend
 python3 app.py
 ```
 
-Open: **http://127.0.0.1:18791**
+Open: **http://127.0.0.1:18790**
 
 Try changing states (run from project root):
 ```bash
@@ -131,7 +131,7 @@ cd backend
 python3 app.py
 ```
 
-Open: `http://127.0.0.1:18791`
+Open: `http://127.0.0.1:18790`
 
 ### 4) Switch main Agent status (example)
 

@@ -2511,13 +2511,13 @@ def assets_upload():
 
 
 if __name__ == "__main__":
-    raw_port = os.environ.get("STAR_BACKEND_PORT", "18791")
+    raw_port = os.environ.get("STAR_BACKEND_PORT", "18790")
     try:
         backend_port = int(raw_port)
     except ValueError:
-        backend_port = 18791
+        backend_port = 18790
     if backend_port <= 0:
-        backend_port = 18791
+        backend_port = 18790
 
     print("=" * 50)
     print("Star Office UI - Backend State Service")

@@ -14,7 +14,7 @@
 ## 用法
 ```bash
 cd /root/.openclaw/workspace/Star-Office-UI
-bash scripts/release_preflight.sh http://127.0.0.1:18791
+bash scripts/release_preflight.sh http://127.0.0.1:18790
 ```
 
 ## 验收标准

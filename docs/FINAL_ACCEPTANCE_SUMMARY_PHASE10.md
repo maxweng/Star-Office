@@ -72,7 +72,7 @@ git revert 2895848 9311ad7 1367535 409baaf c3774fc d5ad92e db12219 7d463ab 4cf02
 ## 五、附：发布前体检命令
 
 ```bash
-bash scripts/release_preflight.sh http://127.0.0.1:18791
+bash scripts/release_preflight.sh http://127.0.0.1:18790
 ```
 
 通过后再发版，能显著降低回归风险。

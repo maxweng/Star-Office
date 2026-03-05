@@ -26,7 +26,7 @@
      - `OFFICE_LOCAL_STATE_FILE=/你的/state.json/路径`
    - 如果你不方便提供 state 文件，再用 /status 鉴权方式：
      - `OFFICE_LOCAL_STATUS_TOKEN=<你的token>`
-     - （可选）`OFFICE_LOCAL_STATUS_URL=http://127.0.0.1:18791/status`
+     - （可选）`OFFICE_LOCAL_STATUS_URL=http://127.0.0.1:18790/status`
    - 填入配置后运行
 
 3. 脚本会自动：
