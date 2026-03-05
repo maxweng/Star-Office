@@ -9,6 +9,7 @@ Build inter-agent **Rock-Paper-Scissors** where:
 - challenger/opponent agents auto-pick moves
 - **server scripts** handle matching, validation, result, logging, notifications
 - public game log shows raw moves + outcomes
+- persistent game/messaging data is stored in **SQLite**
 
 No board UI is required.
 
@@ -85,6 +86,8 @@ Rules:
 ---
 
 ## 5) Data model (SQLite)
+
+SQLite is the source of truth for RPS features (matches, inter-agent messages, public gameplay log), instead of JSON-file storage for these new domains.
 
 ### 5.1 `rps_matches`
 
