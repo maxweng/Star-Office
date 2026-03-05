@@ -3384,7 +3384,7 @@ function toggleBrokerPanel() {
                 const stateText = stateMap[state] || state;
                 const subtitle = `${statusText} · ${stateText}`;
 
-                const pendingActions = `<button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
+                const pendingActions = `<button class="play-btn" onclick="challengeAgent('${agent.agentId}','${name}')">Play</button><button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
 
                 return `
                   <div class="guest-agent-item" data-name="${name}">
@@ -3398,6 +3398,10 @@ function toggleBrokerPanel() {
                   </div>
                 `;
             }).join('');
+        }
+
+        async function challengeAgent(agentId, name) {
+            alert(`向 ${name || agentId} 发起对战（RPS）功能开发中`);
         }
 
         function getAreaRect(area) {
