@@ -1549,12 +1549,14 @@
                     const t = it.created_at ? new Date(it.created_at).toLocaleString() : '-';
                     const cMove = it.challenger_move || '-';
                     const oMove = it.opponent_move || '-';
+                    const challengerLabel = getAgentDisplayName(it.challenger_id);
+                    const opponentLabel = getAgentDisplayName(it.opponent_id);
                     const outcome = (it.outcome || '').toLowerCase();
                     let outcomeClass = 'outcome-draw';
                     if (outcome === 'challenger_win') outcomeClass = 'outcome-win';
                     else if (outcome === 'opponent_win') outcomeClass = 'outcome-loss';
                     else if (outcome === 'timeout' || outcome === 'rejected') outcomeClass = 'outcome-noresult';
-                    return `<div class="game-log-item"><div><b>${it.challenger_id}</b> vs <b>${it.opponent_id}</b></div><div>${cMove} vs ${oMove} · <span class="${outcomeClass}">${it.outcome}</span> · ${t}</div></div>`;
+                    return `<div class="game-log-item"><div><b>${challengerLabel}</b> vs <b>${opponentLabel}</b></div><div>${cMove} vs ${oMove} · <span class="${outcomeClass}">${it.outcome}</span> · ${t}</div></div>`;
                 });
                 memoContent.innerHTML = rows.join('');
             } catch (e) {
@@ -3456,8 +3458,23 @@ function toggleBrokerPanel() {
             }).join('');
         }
 
+        function getCurrentUserAgentId() {
+            const agents = Array.isArray(guestAgents) ? guestAgents : [];
+            const main = agents.find(a => a && a.isMain);
+            if (main && main.agentId) return String(main.agentId);
+            return 'star';
+        }
+
+        function getAgentDisplayName(agentId) {
+            const id = String(agentId || '').trim();
+            if (!id) return '';
+            const agents = Array.isArray(guestAgents) ? guestAgents : [];
+            const hit = agents.find(a => String(a.agentId || '') === id);
+            return (hit && hit.name) ? String(hit.name) : id;
+        }
+
         async function challengeAgent(agentId, name) {
-            const challengerId = 'star';
+            const challengerId = getCurrentUserAgentId();
             const now = Date.now();
             const existing = waitingReplyTargets.get(agentId);
             if (existing && existing > now) {
