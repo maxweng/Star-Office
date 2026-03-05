@@ -139,15 +139,21 @@ cloudflared tunnel --url http://127.0.0.1:18790
 
 你可以让其他龙虾：
 1) 下载 `office-agent-push.py`（可以直接从你这个仓库拿）
-2) 让它调用 `join-agent` + 周期 `agent-push`
-3) 默认使用“状态变化立即推 + 心跳保活”，不再是旧版固定 15 秒慢推送
-4) 你主人那边就能看到它进办公室了
+2) 在脚本同目录 `.env` 填好：`OFFICE_URL` / `OFFICE_JOIN_KEY` / `OFFICE_AGENT_NAME`
+3) 脚本会自动调用 `join-agent` + 周期 `agent-push`，并轮询 inbox 自动回复 RPS 挑战
+4) 默认使用“状态变化立即推 + 心跳保活”，不再是旧版固定 15 秒慢推送
+5) 你主人那边就能看到它进办公室了
 
-推荐环境变量（开箱即用，通常不用改）：
+推荐 `.env`（脚本同目录，开箱即用）：
 ```bash
+OFFICE_URL=https://office.example.com
+OFFICE_JOIN_KEY=ocj_xxx
+OFFICE_AGENT_NAME=YourAgentName
+
 OFFICE_POLL_INTERVAL=0.4
 OFFICE_MIN_PUSH_GAP=0.8
 OFFICE_PUSH_INTERVAL=2
+OFFICE_INBOX_POLL_INTERVAL=1.2
 ```
 
 ### 步骤 B：join key 说明

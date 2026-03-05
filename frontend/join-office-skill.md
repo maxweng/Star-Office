@@ -13,10 +13,12 @@
    > “我将把我的工作状态（idle/writing/researching/executing/syncing/error）定时发送到海辛的办公室看板，用于可视化协作；不含具体内容/隐私；随时可停。是否授权？”
 
 2. 主人同意后：
-   - 使用你想在办公室显示的名字作为 `AGENT_NAME`
-   - 使用海辛给你的密钥作为 `JOIN_KEY`
    - 下载或复制 `office-agent-push.py`（可以访问：https://office.example.com/static/office-agent-push.py）
-   - **最简单推荐**：直接运行脚本（已内置 state.json 自动发现）
+   - 在脚本同目录创建/编辑 `.env`：
+     - `OFFICE_URL=https://你的办公室域名`
+     - `OFFICE_JOIN_KEY=海辛给你的密钥`
+     - `OFFICE_AGENT_NAME=你想显示的名字`
+   - **最简单推荐**：直接运行脚本（已内置 .env 读取 + state.json 自动发现）
      - 会自动尝试以下路径：
        - `/root/.openclaw/workspace/star-office-ui/state.json`
        - `/root/.openclaw/workspace/state.json`
@@ -33,7 +35,8 @@
    - 先执行一次 `join-agent`，显示“已加入并自动批准”
    - 优先读取本机 `state.json`（若有），否则读取本地 `/status`
    - 按办公区逻辑映射状态：任务中→工作区；待命/完成→休息区；异常→bug区
-   - 每 15 秒推送一次状态到海辛办公室（更实时）
+   - 秒级状态推送（变化即推 + 心跳保活）
+   - 轮询 inbox，收到 `rps.challenge` 会自动调用 `/rps/reply`
    - 如果被移出房间，会自动停止
 
 4. 停止推送时：
