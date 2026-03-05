@@ -13,6 +13,7 @@ import json
 import os
 import time
 import sys
+import random
 from datetime import datetime
 
 # === 你需要填入的信息 ===
@@ -26,9 +27,13 @@ OFFICE_URL = "https://office.example.com"  # 海辛办公室地址（一般不�
 PUSH_INTERVAL_SECONDS = float(os.environ.get("OFFICE_PUSH_INTERVAL", "2"))  # 心跳间隔（秒）
 POLL_INTERVAL_SECONDS = float(os.environ.get("OFFICE_POLL_INTERVAL", "0.4"))  # 本地状态轮询间隔（秒）
 MIN_PUSH_GAP_SECONDS = float(os.environ.get("OFFICE_MIN_PUSH_GAP", "0.8"))   # 两次推送最小间隔（秒）
+INBOX_POLL_INTERVAL_SECONDS = float(os.environ.get("OFFICE_INBOX_POLL_INTERVAL", "1.2"))
 STATUS_ENDPOINT = "/status"
 JOIN_ENDPOINT = "/join-agent"
 PUSH_ENDPOINT = "/agent-push"
+INBOX_ENDPOINT = "/agent-inbox"
+ACK_ENDPOINT = "/agent-ack"
+RPS_REPLY_ENDPOINT = "/rps/reply"
 
 # 自动状态守护：当本地状态文件不存在或长期不更新时，自动回 idle，避免“假工作中”
 STALE_STATE_TTL_SECONDS = int(os.environ.get("OFFICE_STALE_STATE_TTL", "600"))
@@ -256,6 +261,96 @@ def do_push(local, status_data, quiet=False):
     return False
 
 
+def _reply_rps_challenge(local, msg):
+    import requests
+    payload = msg.get("payload") if isinstance(msg, dict) else {}
+    if not isinstance(payload, dict):
+        return
+
+    match_id = (payload.get("matchId") or payload.get("match_id") or "").strip()
+    if not match_id:
+        return
+
+    agent_id = (local.get("agentId") or "").strip()
+    if not agent_id:
+        return
+
+    idempotency_key = f"reply_{agent_id}_{match_id}"
+    body = {
+        "matchId": match_id,
+        "opponentId": agent_id,
+        "idempotencyKey": idempotency_key,
+        "opponentChoice": random.choice(["rock", "paper", "scissors"]),
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotency_key,
+    }
+    r = requests.post(f"{OFFICE_URL}{RPS_REPLY_ENDPOINT}", json=body, headers=headers, timeout=10)
+    if r.status_code not in (200, 201):
+        if VERBOSE:
+            print(f"⚠️  自动回复挑战失败({r.status_code}): {r.text}")
+        return
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {}
+    if VERBOSE:
+        print(f"🎮 已自动回复挑战 match={match_id} status={data.get('status')} outcome={data.get('outcome')}")
+
+
+def inbox_tick(local, since_seq):
+    import requests
+    agent_id = (local.get("agentId") or "").strip()
+    if not agent_id:
+        return since_seq
+
+    r = requests.get(
+        f"{OFFICE_URL}{INBOX_ENDPOINT}",
+        params={"toAgent": agent_id, "since": int(since_seq or 0), "limit": 100},
+        timeout=10,
+    )
+    if r.status_code != 200:
+        if VERBOSE:
+            print(f"⚠️  inbox 拉取失败({r.status_code}): {r.text}")
+        return since_seq
+
+    try:
+        data = r.json()
+    except Exception:
+        return since_seq
+
+    msgs = data.get("messages") if isinstance(data, dict) else []
+    if not isinstance(msgs, list):
+        msgs = []
+
+    max_seq = int(since_seq or 0)
+    for msg in msgs:
+        try:
+            seq = int(msg.get("seq") or 0)
+            if seq > max_seq:
+                max_seq = seq
+            mtype = (msg.get("type") or "").strip().lower()
+            if mtype == "rps.challenge":
+                _reply_rps_challenge(local, msg)
+        except Exception as e:
+            if VERBOSE:
+                print(f"⚠️  处理 inbox 消息失败: {e}")
+
+    if max_seq > int(since_seq or 0):
+        try:
+            requests.post(
+                f"{OFFICE_URL}{ACK_ENDPOINT}",
+                json={"toAgent": agent_id, "upToSeq": max_seq},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
+    return max_seq
+
+
 def main():
     local = load_local_state()
 
@@ -279,6 +374,8 @@ def main():
     last_detail = None
     last_push_at = 0.0
     next_heartbeat_at = 0.0
+    inbox_since_seq = 0
+    next_inbox_poll_at = 0.0
 
     try:
         while True:
@@ -298,6 +395,10 @@ def main():
                         last_state, last_detail = s, d
                         last_push_at = now
                         next_heartbeat_at = now + PUSH_INTERVAL_SECONDS
+
+                if now >= next_inbox_poll_at:
+                    inbox_since_seq = inbox_tick(local, inbox_since_seq)
+                    next_inbox_poll_at = now + INBOX_POLL_INTERVAL_SECONDS
             except Exception as e:
                 print(f"⚠️  推送异常：{e}")
 
