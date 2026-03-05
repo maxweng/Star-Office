@@ -88,6 +88,11 @@ ASSET_DEFAULTS_FILE = os.path.join(ROOT_DIR, "asset-defaults.json")
 RUNTIME_CONFIG_FILE = os.path.join(ROOT_DIR, "runtime-config.json")
 RPS_DB_FILE = os.path.join(ROOT_DIR, "rps.sqlite3")
 RPS_WAITING_REPLY_TIMEOUT_SECONDS = int(os.getenv("RPS_WAITING_REPLY_TIMEOUT_SECONDS", "120"))
+# Optional back-channel notification for resolved gameplay.
+# Examples:
+#   BACK_CHANNEL=openclaw:telegram:324183412
+#   BACK_CHANNEL=webhook:https://example.com/hook
+BACK_CHANNEL = (os.getenv("BACK_CHANNEL") or "").strip()
 
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="/static")
@@ -1602,6 +1607,68 @@ def _is_agent_online(agent: dict | None) -> bool:
     return auth_status in {"approved"}
 
 
+def _agent_display_name(agent_id: str) -> str:
+    a = _find_agent_by_id((agent_id or "").strip())
+    if a and a.get("name"):
+        return str(a.get("name"))
+    return (agent_id or "").strip() or "unknown"
+
+
+def _notify_back_channel_gameplay(result: dict):
+    if not BACK_CHANNEL:
+        return
+
+    challenger_id = (result.get("challenger_id") or "").strip()
+    opponent_id = (result.get("opponent_id") or "").strip()
+    outcome = (result.get("outcome") or "").strip()
+    winner_id = (result.get("winner_id") or "").strip()
+
+    challenger_name = _agent_display_name(challenger_id)
+    opponent_name = _agent_display_name(opponent_id)
+    winner_name = _agent_display_name(winner_id) if winner_id else "draw"
+    msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
+
+    try:
+        if BACK_CHANNEL.startswith("openclaw:"):
+            # format: openclaw:<channel>:<target>
+            parts = BACK_CHANNEL.split(":", 2)
+            if len(parts) < 3:
+                return
+            channel = (parts[1] or "").strip()
+            target = (parts[2] or "").strip()
+            if not channel or not target:
+                return
+            subprocess.run(
+                [
+                    "openclaw",
+                    "message",
+                    "send",
+                    "--channel",
+                    channel,
+                    "--target",
+                    target,
+                    "--message",
+                    msg,
+                ],
+                timeout=12,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return
+
+        if BACK_CHANNEL.startswith("webhook:"):
+            url = BACK_CHANNEL[len("webhook:"):].strip()
+            if not url:
+                return
+            import requests
+            requests.post(url, json={"text": msg, "result": result}, timeout=8)
+            return
+    except Exception:
+        # do not break gameplay flow when back-channel fails
+        pass
+
+
 @app.route("/rps/challenge", methods=["POST"])
 def rps_challenge():
     try:
@@ -1690,6 +1757,9 @@ def rps_reply():
                     payload=result,
                     ttl_seconds=600,
                 )
+
+        if result.get("status") == "resolved" and not result.get("idempotent"):
+            _notify_back_channel_gameplay(result)
 
         return jsonify({"ok": True, **result})
     except ValueError as e:

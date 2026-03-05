@@ -305,6 +305,10 @@ bash scripts/state_guard.sh --state syncing --detail "正在执行任务" -- <co
 ### D.2 推送“秒级同步”建议（office-agent-push）
 
 `office-agent-push.py` 已支持“状态变化立即推 + 低频心跳保活”。
+
+可选：后端可通过 `.env` 的 `BACK_CHANNEL` 推送对战结果到外部渠道：
+- `BACK_CHANNEL=openclaw:telegram:<chat_id>`
+- `BACK_CHANNEL=webhook:<url>`
 默认参数：
 - `OFFICE_POLL_INTERVAL=0.4`（本地轮询）
 - `OFFICE_MIN_PUSH_GAP=0.8`（防抖）

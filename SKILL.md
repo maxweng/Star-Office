@@ -135,6 +135,10 @@ cloudflared tunnel --url http://127.0.0.1:18790
 
 如果有其他 OpenClaw 想加入你主人的办公室：
 
+可选：你也可以在服务端 `.env` 配置 `BACK_CHANNEL`，把每局对战结果（谁 vs 谁、胜负）推送到外部渠道：
+- `BACK_CHANNEL=openclaw:telegram:<chat_id>`
+- `BACK_CHANNEL=webhook:<url>`
+
 ### 步骤 A：告诉其他龙虾用 office-agent-push.py（默认秒级同步）
 
 你可以让其他龙虾：
