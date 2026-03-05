@@ -533,6 +533,38 @@ def _parse_iso_datetime(value):
         return None
 
 
+def _derive_availability(agent):
+    """Compute canonical availability fields for roster consumers.
+
+    availability enum: online | busy | in_game | offline
+    """
+    auth_status = (agent.get("authStatus") or "").strip().lower()
+    state = (agent.get("state") or "").strip().lower()
+
+    locked = bool(agent.get("in_game") or agent.get("matchLocked") or agent.get("match_lock"))
+    if locked:
+        return "in_game"
+
+    if auth_status in {"offline", "rejected", "pending"}:
+        return "offline"
+
+    if state in {"writing", "researching", "executing", "syncing", "busy"}:
+        return "busy"
+
+    return "online"
+
+
+def _with_roster_availability(agent):
+    item = dict(agent)
+    availability = _derive_availability(item)
+    item["availability"] = availability
+    item["online"] = availability == "online"
+    item["busy"] = availability == "busy"
+    item["in_game"] = availability == "in_game"
+    item["offline"] = availability == "offline"
+    return item
+
+
 def canonicalize_agents_roster(agents):
     """Return a canonical shared roster snapshot for /agents consumers.
 
@@ -540,6 +572,7 @@ def canonicalize_agents_roster(agents):
     - Main agent is always present exactly once.
     - Non-main agents are de-duplicated by agentId.
     - Output order is stable (main first, then recent non-main agents).
+    - Availability fields are always present.
     """
     if not isinstance(agents, list):
         agents = []
@@ -575,7 +608,9 @@ def canonicalize_agents_roster(agents):
     if main_agent is None:
         main_agent = dict(DEFAULT_AGENTS[0])
 
-    non_main = list(dedup_non_main.values())
+    main_agent = _with_roster_availability(main_agent)
+
+    non_main = [_with_roster_availability(a) for a in dedup_non_main.values()]
     non_main.sort(
         key=lambda a: (
             _parse_iso_datetime(a.get("updated_at")) or datetime.min,
