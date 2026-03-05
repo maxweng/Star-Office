@@ -10,7 +10,7 @@ SESSIONS_FILE = Path("/root/.openclaw/agents/main/sessions/sessions.json")
 STATE_FILE = WORKSPACE / "Star-Office-UI" / "state.json"
 
 POLL_SECONDS = float(os.environ.get("STAR_BRIDGE_POLL_SECONDS", "3"))
-ACTIVE_SECONDS = float(os.environ.get("STAR_BRIDGE_ACTIVE_SECONDS", "25"))
+ACTIVE_SECONDS = float(os.environ.get("STAR_BRIDGE_ACTIVE_SECONDS", "120"))
 DETAIL_PREFIX = os.environ.get("STAR_BRIDGE_DETAIL_PREFIX", "OpenClaw auto-sync")
 
 
@@ -36,6 +36,15 @@ def get_latest_activity_ts_ms() -> int | None:
             if isinstance(ts, (int, float)):
                 latest = max(latest or 0, int(ts))
     elif isinstance(data, dict):
+        # Newer OpenClaw format: top-level map keyed by sessionKey
+        for item in data.values():
+            if not isinstance(item, dict):
+                continue
+            ts = item.get("updatedAt") or item.get("updated_at")
+            if isinstance(ts, (int, float)):
+                latest = max(latest or 0, int(ts))
+
+        # Legacy/alternate format: { recent: [...] }
         recent = data.get("recent")
         if isinstance(recent, list):
             for item in recent:
