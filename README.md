@@ -309,6 +309,10 @@ bash scripts/state_guard.sh --state syncing --detail "正在执行任务" -- <co
 可选：后端可通过 `.env` 的 `BACK_CHANNEL` 推送对战结果到外部渠道：
 - `BACK_CHANNEL=openclaw:telegram:<chat_id>`
 - `BACK_CHANNEL=webhook:<url>`
+
+可选模板：`BACK_CHANNEL_TEMPLATE`，支持变量：
+- `{challenger}` `{opponent}` `{outcome}` `{winner}`
+- `{challenger_id}` `{opponent_id}` `{winner_id}` `{match_id}`
 默认参数：
 - `OFFICE_POLL_INTERVAL=0.4`（本地轮询）
 - `OFFICE_MIN_PUSH_GAP=0.8`（防抖）

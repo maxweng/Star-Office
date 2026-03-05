@@ -93,6 +93,10 @@ RPS_WAITING_REPLY_TIMEOUT_SECONDS = int(os.getenv("RPS_WAITING_REPLY_TIMEOUT_SEC
 #   BACK_CHANNEL=openclaw:telegram:324183412
 #   BACK_CHANNEL=webhook:https://example.com/hook
 BACK_CHANNEL = (os.getenv("BACK_CHANNEL") or "").strip()
+BACK_CHANNEL_TEMPLATE = (
+    os.getenv("BACK_CHANNEL_TEMPLATE")
+    or "🎮 Star Office RPS\n{challenger} vs {opponent}\nOutcome: {outcome}\nWinner: {winner}"
+)
 
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="/static")
@@ -1626,7 +1630,19 @@ def _notify_back_channel_gameplay(result: dict):
     challenger_name = _agent_display_name(challenger_id)
     opponent_name = _agent_display_name(opponent_id)
     winner_name = _agent_display_name(winner_id) if winner_id else "draw"
-    msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
+    try:
+        msg = BACK_CHANNEL_TEMPLATE.format(
+            challenger=challenger_name,
+            opponent=opponent_name,
+            outcome=outcome,
+            winner=winner_name,
+            challenger_id=challenger_id,
+            opponent_id=opponent_id,
+            winner_id=winner_id,
+            match_id=(result.get("match_id") or ""),
+        )
+    except Exception:
+        msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
 
     try:
         if BACK_CHANNEL.startswith("openclaw:"):
