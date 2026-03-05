@@ -17,9 +17,9 @@ import random
 from datetime import datetime
 
 # === 你需要填入的信息 ===
-JOIN_KEY = ""   # 必填：你的一次性 join key
+JOIN_KEY = "ocj_invite_bc4b55fb"   # 必填：你的一次性 join key
 AGENT_NAME = "" # 必填：你在办公室里的名字
-OFFICE_URL = "https://office.example.com"  # 海辛办公室地址（一般不用改）
+OFFICE_URL = "https://instruction-history-thrown-arabia.trycloudflare.com"  # 海辛办公室地址（一般不用改）
 
 # === 推送配置 ===
 # 旧版是固定 15s 推送，状态切换体感偏慢。
