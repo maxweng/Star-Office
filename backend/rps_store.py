@@ -92,6 +92,8 @@ def ensure_rps_schema(db_path: str):
 
 
 VALID_CHOICES = {"rock", "paper", "scissors"}
+ACTIVE_MATCH_STATUSES = {"pending", "waiting_reply"}
+TERMINAL_MATCH_STATUSES = {"resolved", "rejected", "timeout", "error"}
 
 
 def _normalize_choice(choice: str | None) -> str | None:
@@ -127,6 +129,121 @@ def compute_rps_outcome(challenger_choice: str, opponent_choice: str):
         return "challenger_win", "challenger"
 
     return "opponent_win", "opponent"
+
+
+def has_active_match_for_agent(db_path: str, agent_id: str) -> bool:
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in ACTIVE_MATCH_STATUSES)
+        sql = f"""
+            SELECT 1
+            FROM rps_matches
+            WHERE status IN ({placeholders})
+              AND (challenger_id = ? OR opponent_id = ?)
+            LIMIT 1
+        """
+        params = [*ACTIVE_MATCH_STATUSES, agent_id, agent_id]
+        cur.execute(sql, params)
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def create_match_with_lock(
+    db_path: str,
+    *,
+    match_id: str,
+    challenger_id: str,
+    opponent_id: str,
+    created_at: str,
+    expires_at: str | None = None,
+    idempotency_key: str | None = None,
+):
+    """Create a pending match with single-active-match lock enforcement.
+
+    Lock rule:
+    - challenger/opponent cannot have existing pending/waiting_reply match.
+    """
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+
+        # idempotent retry: if same key already exists, return existing row
+        if idempotency_key:
+            cur.execute(
+                "SELECT match_id, status, challenger_id, opponent_id FROM rps_matches WHERE idempotency_key = ?",
+                (idempotency_key,),
+            )
+            existing = cur.fetchone()
+            if existing is not None:
+                conn.commit()
+                return {
+                    "created": False,
+                    "match_id": existing["match_id"],
+                    "status": existing["status"],
+                    "challenger_id": existing["challenger_id"],
+                    "opponent_id": existing["opponent_id"],
+                    "idempotent": True,
+                }
+
+        placeholders = ",".join("?" for _ in ACTIVE_MATCH_STATUSES)
+        sql = f"""
+            SELECT challenger_id, opponent_id, status
+            FROM rps_matches
+            WHERE status IN ({placeholders})
+              AND (challenger_id IN (?, ?) OR opponent_id IN (?, ?))
+            LIMIT 1
+        """
+        params = [*ACTIVE_MATCH_STATUSES, challenger_id, opponent_id, challenger_id, opponent_id]
+        cur.execute(sql, params)
+        conflict = cur.fetchone()
+        if conflict is not None:
+            conn.rollback()
+            raise ValueError("match lock conflict: one of agents already has an active match")
+
+        cur.execute(
+            """
+            INSERT INTO rps_matches (
+                match_id,
+                challenger_id,
+                opponent_id,
+                status,
+                created_at,
+                updated_at,
+                expires_at,
+                idempotency_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                match_id,
+                challenger_id,
+                opponent_id,
+                "pending",
+                created_at,
+                created_at,
+                expires_at,
+                idempotency_key,
+            ),
+        )
+        conn.commit()
+        return {
+            "created": True,
+            "match_id": match_id,
+            "status": "pending",
+            "challenger_id": challenger_id,
+            "opponent_id": opponent_id,
+            "idempotent": False,
+        }
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
 
 
 def resolve_rps_match(db_path: str, match_id: str, challenger_choice: str, opponent_choice: str):
