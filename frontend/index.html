@@ -3396,6 +3396,9 @@ function toggleBrokerPanel() {
                 const subtitle = gameplayStatus
                     ? `${statusText} · ${stateText} · ${gameplayStatus}`
                     : `${statusText} · ${stateText}`;
+                const updatedAt = agent.updated_at ? new Date(agent.updated_at).getTime() : 0;
+                const ageSec = updatedAt ? Math.max(0, Math.floor((Date.now() - updatedAt) / 1000)) : null;
+                const ageText = ageSec === null ? '' : ` · updated ${ageSec}s ago`;
 
                 const pendingActions = `<button class="play-btn" onclick="challengeAgent('${agent.agentId}','${name}')">Play</button><button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
 
@@ -3403,7 +3406,7 @@ function toggleBrokerPanel() {
                   <div class="guest-agent-item" data-name="${name}">
                     <div>
                       <div class="guest-agent-name">${name}</div>
-                      <div style="font-size:11px;color:#cbd5e1;">${subtitle}</div>
+                      <div style="font-size:11px;color:#cbd5e1;">${subtitle}${ageText}</div>
                     </div>
                     <div class="guest-agent-buttons">
                       ${pendingActions}
