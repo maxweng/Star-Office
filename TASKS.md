@@ -4,7 +4,7 @@
 
 1. ~~Add canonical roster parity in `/agents` for all joined agents.~~
 2. ~~Add/verify availability fields in roster (`online`, `busy`, `in_game`, `offline`).~~
-3. Create DB tables: `rps_matches`, `agent_messages`, `game_log`.
+3. ~~Create DB tables: `rps_matches`, `agent_messages`, `game_log`.~~
 4. Implement server-side validator logic for RPS outcomes.
 5. Implement match locking (single active match per agent).
 6. Implement terminal-state unlock (`resolved/rejected/timeout/error`).

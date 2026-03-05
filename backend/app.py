@@ -37,6 +37,7 @@ from store_utils import (
     load_join_keys as _store_load_join_keys,
     save_join_keys as _store_save_join_keys,
 )
+from rps_store import ensure_rps_schema
 
 try:
     from PIL import Image
@@ -75,6 +76,7 @@ AUTO_ROTATE_MIN_INTERVAL_SECONDS = int(os.getenv("AUTO_ROTATE_MIN_INTERVAL_SECON
 _last_home_rotate_at = 0
 ASSET_DEFAULTS_FILE = os.path.join(ROOT_DIR, "asset-defaults.json")
 RUNTIME_CONFIG_FILE = os.path.join(ROOT_DIR, "runtime-config.json")
+RPS_DB_FILE = os.path.join(ROOT_DIR, "rps.sqlite3")
 
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="/static")
@@ -1140,6 +1142,13 @@ if os.path.exists(RUNTIME_CONFIG_FILE):
         os.chmod(RUNTIME_CONFIG_FILE, 0o600)
     except Exception:
         pass
+
+# Initialize SQLite schema for RPS/messaging/game-log domains.
+try:
+    ensure_rps_schema(RPS_DB_FILE)
+except Exception:
+    # keep service boot non-breaking; APIs can still run without game features
+    pass
 
 
 @app.route("/agents", methods=["GET"])
