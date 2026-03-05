@@ -1711,16 +1711,21 @@
         const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
         const FETCH_INTERVAL = 1000;
         const GUEST_AGENTS_FETCH_INTERVAL = 3500;
+        const AGENT_INBOX_FETCH_INTERVAL = 1500;
+        const GAMEPLAY_LOG_FETCH_INTERVAL = 5000;
         const RPS_WAITING_REPLY_TIMEOUT_SECONDS = 120;
         const BLINK_INTERVAL = 2500;
         const BUBBLE_INTERVAL = 8000;
         const CAT_BUBBLE_INTERVAL = 18000; // cat bubble much less frequent
         let lastCatBubble = 0;
         let lastGuestAgentsFetch = 0;
+        let lastInboxFetch = 0;
+        let lastGameplayLogFetch = 0;
         let lastGuestBubbleAt = 0;
         const TYPEWRITER_DELAY = 50;
         let lastSeenGuestIds = new Set(); // 用于检测新加入的访客，触发欢迎气泡
         let guestWelcomeInitialized = false;
+        let inboxSinceSeq = 0;
 
         // 状态控制栏函数（用于测试）
         function setState(state, detail) {
@@ -3842,6 +3847,39 @@ function toggleBrokerPanel() {
             } catch (e) { console.error('强制冒泡失败:', e); }
         }
 
+        async function fetchRpsInbox() {
+            try {
+                const resp = await fetch(`/agent-inbox?toAgent=star&since=${inboxSinceSeq}&limit=100&t=${Date.now()}`, { cache: 'no-store' });
+                const data = await resp.json();
+                if (!resp.ok || !data.ok) return;
+                const msgs = Array.isArray(data.messages) ? data.messages : [];
+                let maxSeq = inboxSinceSeq;
+                let hasRpsResult = false;
+                msgs.forEach((m) => {
+                    if (typeof m.seq === 'number') maxSeq = Math.max(maxSeq, m.seq);
+                    if (m.type === 'rps.result' && m.payload) {
+                        const opp = m.payload.opponent_id || m.payload.opponentId;
+                        if (opp) waitingReplyTargets.delete(opp);
+                        hasRpsResult = true;
+                    }
+                });
+                if (maxSeq > inboxSinceSeq) {
+                    inboxSinceSeq = maxSeq;
+                    await fetch('/agent-ack', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ toAgent: 'star', upToSeq: inboxSinceSeq })
+                    });
+                }
+                if (hasRpsResult) {
+                    renderGuestAgentList();
+                    loadMemo();
+                }
+            } catch (e) {
+                // ignore transient inbox failures
+            }
+        }
+
         function fetchGuestAgents() {
             // demo 随机状态先更新（不依赖后端）
             maybeRandomizeDemoVisitors();
@@ -4479,6 +4517,8 @@ function toggleBrokerPanel() {
         function update(time) {
             if (time - lastFetch > FETCH_INTERVAL) { fetchStatus(); lastFetch = time; }
             if (time - lastGuestAgentsFetch > GUEST_AGENTS_FETCH_INTERVAL) { fetchGuestAgents(); lastGuestAgentsFetch = time; }
+            if (time - lastInboxFetch > AGENT_INBOX_FETCH_INTERVAL) { fetchRpsInbox(); lastInboxFetch = time; }
+            if (time - lastGameplayLogFetch > GAMEPLAY_LOG_FETCH_INTERVAL) { loadMemo(); lastGameplayLogFetch = time; }
 
             // 兜底：非 idle 时确保机房动画在播，idle 时静止
             const effectiveStateForServer = pendingDesiredState || currentState;
