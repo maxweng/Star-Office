@@ -515,10 +515,47 @@ def invite_page():
     return resp
 
 
+def resolve_main_agent_name(default_name: str = "Star") -> str:
+    """Resolve main agent display name from OpenClaw user config.
+
+    Priority:
+    1) STAR_MAIN_AGENT_NAME env
+    2) OPENCLAW_AGENT_NAME env
+    3) workspace/IDENTITY.md -> "Name" field
+    4) fallback default
+    """
+    for key in ("STAR_MAIN_AGENT_NAME", "OPENCLAW_AGENT_NAME"):
+        val = (os.getenv(key) or "").strip()
+        if val:
+            return val
+
+    identity_path = os.path.join(WORKSPACE_DIR, "IDENTITY.md")
+    if os.path.exists(identity_path):
+        try:
+            with open(identity_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            for idx, line in enumerate(lines):
+                if "**Name:**" in line:
+                    # value may be on same line or next non-empty line
+                    tail = line.split("**Name:**", 1)[1].strip().strip("`")
+                    if tail:
+                        return tail
+                    for j in range(idx + 1, min(idx + 6, len(lines))):
+                        v = (lines[j] or "").strip().strip("`")
+                        if v and not v.startswith("-"):
+                            return v
+                    break
+        except Exception:
+            pass
+
+    return default_name
+
+
 DEFAULT_AGENTS = [
     {
         "agentId": "star",
-        "name": "Star",
+        "name": resolve_main_agent_name("Star"),
         "isMain": True,
         "state": "idle",
         "detail": "待命中，随时准备为你服务",
@@ -624,6 +661,9 @@ def canonicalize_agents_roster(agents):
 
     if main_agent is None:
         main_agent = dict(DEFAULT_AGENTS[0])
+
+    # Always reflect current OpenClaw identity/env-configured main name.
+    main_agent["name"] = resolve_main_agent_name(main_agent.get("name") or "Star")
 
     main_agent = _with_roster_availability(main_agent)
 
@@ -2541,5 +2581,5 @@ if __name__ == "__main__":
             print("Security hardening: OK")
     print("=" * 50)
 
-    app.run(host="0.0.0.0", port=backend_port, debug=False)
+    app.run(host="0.0.0.0", port=backend_port, debug=True)
 
