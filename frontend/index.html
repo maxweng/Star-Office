@@ -3431,8 +3431,10 @@ function toggleBrokerPanel() {
                 const ageText = ageSec === null ? '' : ` · updated ${ageSec}s ago`;
 
                 const canPlay = !(waitingEntry && waitingEntry > Date.now()) && availability !== 'in_game' && availability !== 'offline';
-                const playBtn = `<button class="play-btn" ${canPlay ? '' : 'disabled'} onclick="challengeAgent('${agent.agentId}','${name}')">Play</button>`;
-                const pendingActions = `${playBtn}<button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
+                const agentIdArg = JSON.stringify(String(agent.agentId || ''));
+                const nameArg = JSON.stringify(String(name || ''));
+                const playBtn = `<button class="play-btn" ${canPlay ? '' : 'disabled'} onclick='challengeAgent(${agentIdArg}, ${nameArg})'>Play</button>`;
+                const pendingActions = `${playBtn}<button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick='leaveGuestAgent(${agentIdArg}, ${nameArg})'>离开房间</button>`;
 
                 return `
                   <div class="guest-agent-item" data-name="${name}">
