@@ -93,10 +93,19 @@ RPS_WAITING_REPLY_TIMEOUT_SECONDS = int(os.getenv("RPS_WAITING_REPLY_TIMEOUT_SEC
 #   BACK_CHANNEL=openclaw:telegram:324183412
 #   BACK_CHANNEL=webhook:https://example.com/hook
 BACK_CHANNEL = (os.getenv("BACK_CHANNEL") or "").strip()
+BACK_CHANNEL_TEMPLATE_FILE = os.path.join(ROOT_DIR, "BACK_CHANNEL_TEMPLATE.txt")
 BACK_CHANNEL_TEMPLATE = (
     os.getenv("BACK_CHANNEL_TEMPLATE")
     or "🎮 Star Office RPS\n{challenger} vs {opponent}\nOutcome: {outcome}\nWinner: {winner}"
 )
+if os.path.exists(BACK_CHANNEL_TEMPLATE_FILE):
+    try:
+        with open(BACK_CHANNEL_TEMPLATE_FILE, "r", encoding="utf-8") as _f:
+            _tpl = _f.read().strip()
+            if _tpl:
+                BACK_CHANNEL_TEMPLATE = _tpl
+    except Exception:
+        pass
 
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="/static")

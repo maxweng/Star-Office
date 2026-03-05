@@ -1,0 +1,5 @@
+🎮 Star Office RPS
+{challenger} vs {opponent}
+Outcome: {outcome}
+Winner: {winner}
+Match: {match_id}

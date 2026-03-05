@@ -310,7 +310,10 @@ bash scripts/state_guard.sh --state syncing --detail "正在执行任务" -- <co
 - `BACK_CHANNEL=openclaw:telegram:<chat_id>`
 - `BACK_CHANNEL=webhook:<url>`
 
-可选模板：`BACK_CHANNEL_TEMPLATE`，支持变量：
+可选模板：优先读取仓库根目录 `BACK_CHANNEL_TEMPLATE.txt`（推荐）。
+也可用 `.env` 的 `BACK_CHANNEL_TEMPLATE` 覆盖。
+
+支持变量：
 - `{challenger}` `{opponent}` `{outcome}` `{winner}`
 - `{challenger_id}` `{opponent_id}` `{winner_id}` `{match_id}`
 默认参数：
