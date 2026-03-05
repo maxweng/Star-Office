@@ -715,3 +715,23 @@ def ack_agent_messages(db_path: str, *, to_agent: str, up_to_seq: int):
         return {"ok": True, "acked": cur.rowcount or 0, "up_to_seq": seq}
     finally:
         conn.close()
+
+
+def list_game_log(db_path: str, limit: int = 50):
+    n = max(1, min(int(limit or 50), 200))
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, match_id, challenger_id, opponent_id,
+                   challenger_move, opponent_move, outcome, created_at
+            FROM game_log
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (n,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()

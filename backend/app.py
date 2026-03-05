@@ -46,6 +46,7 @@ from rps_store import (
     ack_agent_messages,
     sweep_expired_waiting_replies,
     recover_locks_from_persisted_state,
+    list_game_log,
 )
 
 try:
@@ -1714,6 +1715,16 @@ def agent_ack():
 
         out = ack_agent_messages(RPS_DB_FILE, to_agent=to_agent, up_to_seq=up_to_seq)
         return jsonify(out)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/game-log", methods=["GET"])
+def game_log_list():
+    try:
+        limit = int(request.args.get("limit") or 50)
+        rows = list_game_log(RPS_DB_FILE, limit=limit)
+        return jsonify({"ok": True, "items": rows})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 

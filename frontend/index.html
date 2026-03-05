@@ -927,6 +927,14 @@
             background: #444;
             border-radius: 3px;
         }
+        .game-log-item {
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px dashed rgba(255,255,255,0.12);
+            font-size: 12px;
+            line-height: 1.35;
+            color: #e2e8f0;
+        }
         #memo-placeholder {
             color: #666;
             font-style: italic;
@@ -1517,24 +1525,32 @@
         let loadedAssets = 0;
         let loadingProgressBar, loadingProgressContainer, loadingOverlay, loadingText;
 
-        // Memo 相关函数
+        // Gameplay Log 相关函数
         async function loadMemo() {
             const memoDate = document.getElementById('memo-date');
             const memoContent = document.getElementById('memo-content');
-            
+
             try {
-                const response = await fetch('/yesterday-memo?t=' + Date.now(), { cache: 'no-store' });
+                const response = await fetch('/game-log?limit=60&t=' + Date.now(), { cache: 'no-store' });
                 const data = await response.json();
-                
-                if (data.success && data.memo) {
-                    memoDate.textContent = data.date || '';
-                    memoContent.innerHTML = data.memo.replace(/\n/g, '<br>');
-                } else {
-                    memoContent.innerHTML = '<div id="memo-placeholder">暂无昨日日记</div>';
+                const items = (data && data.ok && Array.isArray(data.items)) ? data.items : [];
+                memoDate.textContent = items.length ? `latest ${items.length} matches` : '';
+
+                if (!items.length) {
+                    memoContent.innerHTML = '<div id="memo-placeholder">No gameplay records yet</div>';
+                    return;
                 }
+
+                const rows = items.map((it) => {
+                    const t = it.created_at ? new Date(it.created_at).toLocaleString() : '-';
+                    const cMove = it.challenger_move || '-';
+                    const oMove = it.opponent_move || '-';
+                    return `<div class="game-log-item"><div><b>${it.challenger_id}</b> vs <b>${it.opponent_id}</b></div><div>${cMove} vs ${oMove} · ${it.outcome} · ${t}</div></div>`;
+                });
+                memoContent.innerHTML = rows.join('');
             } catch (e) {
-                console.error('加载 memo 失败:', e);
-                memoContent.innerHTML = '<div id="memo-placeholder">加载失败</div>';
+                console.error('加载 gameplay log 失败:', e);
+                memoContent.innerHTML = '<div id="memo-placeholder">Gameplay log load failed</div>';
             }
         }
 
