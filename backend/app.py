@@ -37,7 +37,16 @@ from store_utils import (
     load_join_keys as _store_load_join_keys,
     save_join_keys as _store_save_join_keys,
 )
-from rps_store import ensure_rps_schema
+from rps_store import (
+    ensure_rps_schema,
+    create_challenge,
+    reply_to_challenge,
+    enqueue_agent_message,
+    fetch_agent_inbox,
+    ack_agent_messages,
+    sweep_expired_waiting_replies,
+    recover_locks_from_persisted_state,
+)
 
 try:
     from PIL import Image
@@ -77,6 +86,7 @@ _last_home_rotate_at = 0
 ASSET_DEFAULTS_FILE = os.path.join(ROOT_DIR, "asset-defaults.json")
 RUNTIME_CONFIG_FILE = os.path.join(ROOT_DIR, "runtime-config.json")
 RPS_DB_FILE = os.path.join(ROOT_DIR, "rps.sqlite3")
+RPS_WAITING_REPLY_TIMEOUT_SECONDS = int(os.getenv("RPS_WAITING_REPLY_TIMEOUT_SECONDS", "120"))
 
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="/static")
@@ -110,6 +120,10 @@ PROTECTED_WRITE_PATHS = {
     "/agent-push",
     "/agent-approve",
     "/agent-reject",
+    "/rps/challenge",
+    "/rps/reply",
+    "/agent-send",
+    "/agent-ack",
 }
 
 # Upload hardening (non-breaking default; affects only oversized uploads)
@@ -1146,6 +1160,9 @@ if os.path.exists(RUNTIME_CONFIG_FILE):
 # Initialize SQLite schema for RPS/messaging/game-log domains.
 try:
     ensure_rps_schema(RPS_DB_FILE)
+    # lock recovery is derived from persisted active statuses; timeout sweep on startup.
+    recover_locks_from_persisted_state(RPS_DB_FILE)
+    sweep_expired_waiting_replies(RPS_DB_FILE)
 except Exception:
     # keep service boot non-breaking; APIs can still run without game features
     pass
@@ -1523,6 +1540,180 @@ def agent_push():
 
         save_agents_state(agents)
         return jsonify({"ok": True, "agentId": agent_id, "area": target.get("area")})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+def _find_agent_by_id(agent_id: str):
+    if not agent_id:
+        return None
+    agents = canonicalize_agents_roster(load_agents_state())
+    return next((a for a in agents if (a.get("agentId") or "") == agent_id), None)
+
+
+def _is_agent_online(agent: dict | None) -> bool:
+    if not agent:
+        return False
+    availability = (agent.get("availability") or "").strip().lower()
+    if availability:
+        return availability != "offline"
+    auth_status = (agent.get("authStatus") or "").strip().lower()
+    return auth_status in {"approved"}
+
+
+@app.route("/rps/challenge", methods=["POST"])
+def rps_challenge():
+    try:
+        sweep_expired_waiting_replies(RPS_DB_FILE)
+        data = request.get_json() or {}
+        challenger_id = (data.get("challengerId") or "").strip()
+        opponent_id = (data.get("opponentId") or "").strip()
+        idempotency_key = (data.get("idempotencyKey") or request.headers.get("Idempotency-Key") or "").strip() or None
+        challenger_choice = (data.get("challengerChoice") or "").strip() or None
+        timeout_seconds = int(data.get("timeoutSeconds") or RPS_WAITING_REPLY_TIMEOUT_SECONDS)
+
+        if not challenger_id or not opponent_id:
+            return jsonify({"ok": False, "msg": "missing challengerId/opponentId"}), 400
+        if challenger_id == opponent_id:
+            return jsonify({"ok": False, "msg": "challenger/opponent cannot be the same"}), 400
+
+        challenger = _find_agent_by_id(challenger_id)
+        opponent = _find_agent_by_id(opponent_id)
+        if not challenger or not opponent:
+            return jsonify({"ok": False, "msg": "challenger/opponent not found"}), 404
+        if not _is_agent_online(challenger) or not _is_agent_online(opponent):
+            return jsonify({"ok": False, "msg": "challenger/opponent must be online"}), 409
+
+        result = create_challenge(
+            RPS_DB_FILE,
+            challenger_id=challenger_id,
+            opponent_id=opponent_id,
+            challenger_choice=challenger_choice,
+            timeout_seconds=timeout_seconds,
+            idempotency_key=idempotency_key,
+        )
+
+        # Notify opponent via generic agent messaging transport.
+        enqueue_agent_message(
+            RPS_DB_FILE,
+            from_agent=challenger_id,
+            to_agent=opponent_id,
+            msg_type="rps.challenge",
+            payload={
+                "matchId": result.get("match_id"),
+                "challengerId": challenger_id,
+                "opponentId": opponent_id,
+                "status": result.get("status"),
+                "expiresAt": result.get("expires_at"),
+            },
+            ttl_seconds=timeout_seconds,
+        )
+
+        return jsonify({"ok": True, **result})
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 409
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/rps/reply", methods=["POST"])
+def rps_reply():
+    try:
+        sweep_expired_waiting_replies(RPS_DB_FILE)
+        data = request.get_json() or {}
+        match_id = (data.get("matchId") or "").strip()
+        opponent_id = (data.get("opponentId") or "").strip()
+        opponent_choice = (data.get("opponentChoice") or "").strip() or None
+        idempotency_key = (data.get("idempotencyKey") or request.headers.get("Idempotency-Key") or "").strip() or None
+
+        if not match_id or not opponent_id:
+            return jsonify({"ok": False, "msg": "missing matchId/opponentId"}), 400
+
+        result = reply_to_challenge(
+            RPS_DB_FILE,
+            match_id=match_id,
+            opponent_id=opponent_id,
+            opponent_choice=opponent_choice,
+            idempotency_key=idempotency_key,
+        )
+
+        # Notify challenger about terminal result.
+        if result.get("status") in {"resolved", "timeout", "rejected", "error"}:
+            challenger_id = (result.get("challenger_id") or "").strip()
+            if challenger_id:
+                enqueue_agent_message(
+                    RPS_DB_FILE,
+                    from_agent=opponent_id,
+                    to_agent=challenger_id,
+                    msg_type="rps.result",
+                    payload=result,
+                    ttl_seconds=600,
+                )
+
+        return jsonify({"ok": True, **result})
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "not found" in msg else 409
+        return jsonify({"ok": False, "msg": msg}), code
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/agent-send", methods=["POST"])
+def agent_send():
+    try:
+        data = request.get_json() or {}
+        from_agent = (data.get("fromAgent") or "").strip()
+        to_agent = (data.get("toAgent") or "").strip()
+        msg_type = (data.get("type") or "").strip() or "generic"
+        payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+        ttl_seconds = data.get("ttlSeconds")
+
+        if not from_agent or not to_agent:
+            return jsonify({"ok": False, "msg": "missing fromAgent/toAgent"}), 400
+        if to_agent != "broadcast" and not _find_agent_by_id(to_agent):
+            return jsonify({"ok": False, "msg": "target agent not found"}), 404
+
+        out = enqueue_agent_message(
+            RPS_DB_FILE,
+            from_agent=from_agent,
+            to_agent=to_agent,
+            msg_type=msg_type,
+            payload=payload,
+            ttl_seconds=int(ttl_seconds) if ttl_seconds is not None else None,
+        )
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/agent-inbox", methods=["GET"])
+def agent_inbox():
+    try:
+        sweep_expired_waiting_replies(RPS_DB_FILE)
+        to_agent = (request.args.get("toAgent") or "").strip()
+        since = int(request.args.get("since") or 0)
+        limit = int(request.args.get("limit") or 100)
+        if not to_agent:
+            return jsonify({"ok": False, "msg": "missing toAgent"}), 400
+
+        out = fetch_agent_inbox(RPS_DB_FILE, to_agent=to_agent, since_seq=since, limit=limit)
+        return jsonify({"ok": True, **out})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route("/agent-ack", methods=["POST"])
+def agent_ack():
+    try:
+        data = request.get_json() or {}
+        to_agent = (data.get("toAgent") or "").strip()
+        up_to_seq = int(data.get("upToSeq") or data.get("seq") or 0)
+        if not to_agent or up_to_seq <= 0:
+            return jsonify({"ok": False, "msg": "missing toAgent/upToSeq"}), 400
+
+        out = ack_agent_messages(RPS_DB_FILE, to_agent=to_agent, up_to_seq=up_to_seq)
+        return jsonify(out)
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 

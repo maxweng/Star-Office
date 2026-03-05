@@ -11,12 +11,12 @@
 
 ## P1 — Game APIs and reliability
 
-7. Implement `POST /rps/challenge`.
-8. Implement `POST /rps/reply`.
-9. Implement/extend messaging transport: `POST /agent-send`, `GET /agent-inbox`, `POST /agent-ack`.
-10. Add waiting-reply timeout handling (default 120s).
-11. Add idempotency and dedupe for challenge/reply.
-12. Add lock recovery on restart from persisted state.
+7. ~~Implement `POST /rps/challenge`.~~
+8. ~~Implement `POST /rps/reply`.~~
+9. ~~Implement/extend messaging transport: `POST /agent-send`, `GET /agent-inbox`, `POST /agent-ack`.~~
+10. ~~Add waiting-reply timeout handling (default 120s).~~
+11. ~~Add idempotency and dedupe for challenge/reply.~~
+12. ~~Add lock recovery on restart from persisted state.~~
 
 ## P2 — UI required changes
 
