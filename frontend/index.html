@@ -1686,6 +1686,7 @@
         const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
         const FETCH_INTERVAL = 1000;
         const GUEST_AGENTS_FETCH_INTERVAL = 3500;
+        const RPS_WAITING_REPLY_TIMEOUT_SECONDS = 120;
         const BLINK_INTERVAL = 2500;
         const BUBBLE_INTERVAL = 8000;
         const CAT_BUBBLE_INTERVAL = 18000; // cat bubble much less frequent
@@ -3357,6 +3358,10 @@ function toggleBrokerPanel() {
             if (!list) return;
 
             const visitors = getMergedVisitors();
+            const nowTs = Date.now();
+            for (const [aid, exp] of waitingReplyTargets.entries()) {
+                if (!exp || exp <= nowTs) waitingReplyTargets.delete(aid);
+            }
             if (visitors.length === 0) {
                 list.innerHTML = '<div style="color:#9ca3af;font-size:12px;text-align:center;padding:20px 0;">暂无访客</div>';
                 return;
@@ -3400,7 +3405,9 @@ function toggleBrokerPanel() {
                 const ageSec = updatedAt ? Math.max(0, Math.floor((Date.now() - updatedAt) / 1000)) : null;
                 const ageText = ageSec === null ? '' : ` · updated ${ageSec}s ago`;
 
-                const pendingActions = `<button class="play-btn" onclick="challengeAgent('${agent.agentId}','${name}')">Play</button><button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
+                const canPlay = !(waitingEntry && waitingEntry > Date.now()) && availability !== 'in_game' && availability !== 'offline';
+                const playBtn = `<button class="play-btn" ${canPlay ? '' : 'disabled'} onclick="challengeAgent('${agent.agentId}','${name}')">Play</button>`;
+                const pendingActions = `${playBtn}<button onclick="alert('交换 skill 功能开发中')">交换skill</button><button class="leave-btn" onclick="leaveGuestAgent('${agent.agentId}','${name}')">离开房间</button>`;
 
                 return `
                   <div class="guest-agent-item" data-name="${name}">
@@ -3417,7 +3424,41 @@ function toggleBrokerPanel() {
         }
 
         async function challengeAgent(agentId, name) {
-            alert(`向 ${name || agentId} 发起对战（RPS）功能开发中`);
+            const challengerId = 'star';
+            const now = Date.now();
+            const existing = waitingReplyTargets.get(agentId);
+            if (existing && existing > now) {
+                return;
+            }
+            waitingReplyTargets.set(agentId, now + (RPS_WAITING_REPLY_TIMEOUT_SECONDS * 1000));
+            renderGuestAgentList();
+            try {
+                const idempotencyKey = `challenge_${challengerId}_${agentId}_${now}`;
+                const resp = await fetch('/rps/challenge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+                    body: JSON.stringify({
+                        challengerId,
+                        opponentId: agentId,
+                        idempotencyKey,
+                        timeoutSeconds: RPS_WAITING_REPLY_TIMEOUT_SECONDS
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.ok) {
+                    waitingReplyTargets.delete(agentId);
+                    const msg = (data && data.msg) ? data.msg : `挑战失败(${resp.status})`;
+                    alert(msg);
+                } else {
+                    const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : (now + RPS_WAITING_REPLY_TIMEOUT_SECONDS * 1000);
+                    waitingReplyTargets.set(agentId, expiresAt);
+                }
+            } catch (e) {
+                waitingReplyTargets.delete(agentId);
+                alert('挑战失败，请稍后重试');
+            } finally {
+                renderGuestAgentList();
+            }
         }
 
         function getAreaRect(area) {
