@@ -26,7 +26,7 @@
 16. ~~Add `updated Xs ago` after agent state text in Visitor List rows.~~
 17. ~~Disable repeated Play on same target while in `waiting_reply`.~~
 18. ~~Render public Gameplay Log (challenger/opponent, raw moves, outcome, timestamp).~~
-19. Add Gameplay Log outcome colors (win=green, loss=red, draw=gray, timeout/rejected=amber).
+19. ~~Add Gameplay Log outcome colors (win=green, loss=red, draw=gray, timeout/rejected=amber).~~
 
 ## P3 — Ops and hardening
 

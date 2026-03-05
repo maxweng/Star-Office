@@ -935,6 +935,10 @@
             line-height: 1.35;
             color: #e2e8f0;
         }
+        .outcome-win { color: #22c55e; }
+        .outcome-loss { color: #ef4444; }
+        .outcome-draw { color: #9ca3af; }
+        .outcome-noresult { color: #f59e0b; }
         #memo-placeholder {
             color: #666;
             font-style: italic;
@@ -1545,7 +1549,12 @@
                     const t = it.created_at ? new Date(it.created_at).toLocaleString() : '-';
                     const cMove = it.challenger_move || '-';
                     const oMove = it.opponent_move || '-';
-                    return `<div class="game-log-item"><div><b>${it.challenger_id}</b> vs <b>${it.opponent_id}</b></div><div>${cMove} vs ${oMove} · ${it.outcome} · ${t}</div></div>`;
+                    const outcome = (it.outcome || '').toLowerCase();
+                    let outcomeClass = 'outcome-draw';
+                    if (outcome === 'challenger_win') outcomeClass = 'outcome-win';
+                    else if (outcome === 'opponent_win') outcomeClass = 'outcome-loss';
+                    else if (outcome === 'timeout' || outcome === 'rejected') outcomeClass = 'outcome-noresult';
+                    return `<div class="game-log-item"><div><b>${it.challenger_id}</b> vs <b>${it.opponent_id}</b></div><div>${cMove} vs ${oMove} · <span class="${outcomeClass}">${it.outcome}</span> · ${t}</div></div>`;
                 });
                 memoContent.innerHTML = rows.join('');
             } catch (e) {
