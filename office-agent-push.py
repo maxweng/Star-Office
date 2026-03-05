@@ -15,11 +15,34 @@ import time
 import sys
 import random
 from datetime import datetime
+from pathlib import Path
 
-# === 你需要填入的信息 ===
-JOIN_KEY = "ocj_invite_bc4b55fb"   # 必填：你的一次性 join key
-AGENT_NAME = "" # 必填：你在办公室里的名字
-OFFICE_URL = "https://instruction-history-thrown-arabia.trycloudflare.com"  # 海辛办公室地址（一般不用改）
+
+def _load_dotenv_if_present():
+    """Best-effort .env loader (no external dependency)."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+_load_dotenv_if_present()
+
+# === 你需要填入的信息（优先从 .env / 环境变量读取） ===
+JOIN_KEY = os.environ.get("OFFICE_JOIN_KEY", "")   # 必填：你的一次性 join key
+AGENT_NAME = os.environ.get("OFFICE_AGENT_NAME", "") # 必填：你在办公室里的名字
+OFFICE_URL = os.environ.get("OFFICE_URL", "https://office.example.com")  # 海辛办公室地址（一般不用改）
 
 # === 推送配置 ===
 # 旧版是固定 15s 推送，状态切换体感偏慢。
