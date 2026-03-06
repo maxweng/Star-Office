@@ -1301,6 +1301,32 @@ def get_agents():
     return jsonify(canonical_agents)
 
 
+@app.route("/agents/back-channel", methods=["GET"])
+def agents_back_channel_list():
+    """Debug view: per-agent backChannel snapshot (masked by default)."""
+    try:
+        reveal = (request.args.get("reveal") or "").strip().lower() in {"1", "true", "yes", "on"}
+        agents = canonicalize_agents_roster(load_agents_state())
+        items = []
+        for a in agents:
+            item = {
+                "agentId": (a.get("agentId") or "").strip(),
+                "name": (a.get("name") or "").strip(),
+                "isMain": bool(a.get("isMain")),
+                "availability": (a.get("availability") or "").strip(),
+                "updated_at": a.get("updated_at"),
+            }
+            ch = (a.get("backChannel") or "").strip()
+            if reveal:
+                item["backChannel"] = ch
+            else:
+                item["backChannelMasked"] = _mask_sensitive(ch, keep=6) if ch else ""
+            items.append(item)
+        return jsonify({"ok": True, "count": len(items), "items": items, "reveal": reveal})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
 @app.route("/agent-approve", methods=["POST"])
 def agent_approve():
     """Approve an agent (set authStatus to approved)"""
