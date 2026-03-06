@@ -1687,6 +1687,52 @@ def _agent_display_name(agent_id: str) -> str:
     return (agent_id or "").strip() or "unknown"
 
 
+def _send_to_back_channel(channel_value: str, msg: str, result: dict):
+    target_channel = (channel_value or "").strip()
+    if not target_channel:
+        return
+
+    try:
+        if target_channel.startswith("openclaw:"):
+            # format: openclaw:<channel>:<target>
+            parts = target_channel.split(":", 2)
+            if len(parts) < 3:
+                return
+            channel = (parts[1] or "").strip()
+            target = (parts[2] or "").strip()
+            if not channel or not target:
+                return
+            subprocess.run(
+                [
+                    "openclaw",
+                    "message",
+                    "send",
+                    "--channel",
+                    channel,
+                    "--target",
+                    target,
+                    "--message",
+                    msg,
+                ],
+                timeout=12,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return
+
+        if target_channel.startswith("webhook:"):
+            url = target_channel[len("webhook:"):].strip()
+            if not url:
+                return
+            import requests
+            requests.post(url, json={"text": msg, "result": result}, timeout=8)
+            return
+    except Exception:
+        # do not break gameplay flow when back-channel fails
+        pass
+
+
 def _collect_remote_gameplay_targets(result: dict):
     agents = canonicalize_agents_roster(load_agents_state())
     by_id = {
@@ -1713,8 +1759,6 @@ def _collect_remote_gameplay_targets(result: dict):
 
 def _notify_back_channel_gameplay(result: dict):
     targets = _collect_remote_gameplay_targets(result)
-    if not targets:
-        return
 
     challenger_id = (result.get("challenger_id") or "").strip()
     opponent_id = (result.get("opponent_id") or "").strip()
@@ -1738,6 +1782,11 @@ def _notify_back_channel_gameplay(result: dict):
     except Exception:
         msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
 
+    # Local/main path: keep server-side direct-send via global BACK_CHANNEL.
+    if BACK_CHANNEL:
+        _send_to_back_channel(BACK_CHANNEL, msg, result)
+
+    # Remote path: enqueue to each remote agent inbox for client-side send.
     for t in targets:
         try:
             enqueue_agent_message(
