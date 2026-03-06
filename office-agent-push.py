@@ -326,6 +326,67 @@ def _reply_rps_challenge(local, msg):
         print(f"🎮 已自动回复挑战 match={match_id} status={data.get('status')} outcome={data.get('outcome')}")
 
 
+def _send_gameplay_log_notification(msg):
+    payload = msg.get("payload") if isinstance(msg, dict) else {}
+    if not isinstance(payload, dict):
+        return
+
+    text = (payload.get("text") or "").strip()
+    if not text:
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+        challenger = (result.get("challenger") or result.get("challenger_id") or "challenger")
+        opponent = (result.get("opponent") or result.get("opponent_id") or "opponent")
+        outcome = (result.get("outcome") or "resolved")
+        winner = (result.get("winner") or result.get("winner_id") or "draw")
+        text = f"🎮 Star Office RPS\n{challenger} vs {opponent}\nOutcome: {outcome}\nWinner: {winner}"
+
+    target_channel = (payload.get("backChannel") or BACK_CHANNEL or "").strip()
+    if not target_channel:
+        if VERBOSE:
+            print("⚠️  gameplay.log 未发送：缺少 backChannel")
+        return
+
+    try:
+        if target_channel.startswith("openclaw:"):
+            parts = target_channel.split(":", 2)
+            if len(parts) < 3:
+                return
+            channel = (parts[1] or "").strip()
+            target = (parts[2] or "").strip()
+            if not channel or not target:
+                return
+            import subprocess
+            subprocess.run(
+                [
+                    "openclaw",
+                    "message",
+                    "send",
+                    "--channel",
+                    channel,
+                    "--target",
+                    target,
+                    "--message",
+                    text,
+                ],
+                timeout=12,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return
+
+        if target_channel.startswith("webhook:"):
+            url = target_channel[len("webhook:"):].strip()
+            if not url:
+                return
+            import requests
+            requests.post(url, json={"text": text, "payload": payload}, timeout=8)
+            return
+    except Exception as e:
+        if VERBOSE:
+            print(f"⚠️  gameplay.log 发送失败: {e}")
+
+
 def inbox_tick(local, since_seq):
     import requests
     agent_id = (local.get("agentId") or "").strip()
@@ -360,6 +421,8 @@ def inbox_tick(local, since_seq):
             mtype = (msg.get("type") or "").strip().lower()
             if mtype == "rps.challenge":
                 _reply_rps_challenge(local, msg)
+            elif mtype == "gameplay.log":
+                _send_gameplay_log_notification(msg)
         except Exception as e:
             if VERBOSE:
                 print(f"⚠️  处理 inbox 消息失败: {e}")

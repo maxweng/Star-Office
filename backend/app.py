@@ -1303,16 +1303,18 @@ def get_agents():
 
 @app.route("/agents/back-channel", methods=["GET"])
 def agents_back_channel_list():
-    """Debug view: per-agent backChannel snapshot (masked by default)."""
+    """Debug view: remote agents (isMain=false) backChannel snapshot (masked by default)."""
     try:
         reveal = (request.args.get("reveal") or "").strip().lower() in {"1", "true", "yes", "on"}
         agents = canonicalize_agents_roster(load_agents_state())
         items = []
         for a in agents:
+            if bool(a.get("isMain")):
+                continue
             item = {
                 "agentId": (a.get("agentId") or "").strip(),
                 "name": (a.get("name") or "").strip(),
-                "isMain": bool(a.get("isMain")),
+                "isMain": False,
                 "availability": (a.get("availability") or "").strip(),
                 "updated_at": a.get("updated_at"),
             }
@@ -1685,76 +1687,33 @@ def _agent_display_name(agent_id: str) -> str:
     return (agent_id or "").strip() or "unknown"
 
 
-def _send_to_back_channel(channel_value: str, msg: str, result: dict):
-    target_channel = (channel_value or "").strip()
-    if not target_channel:
-        return
-
-    try:
-        if target_channel.startswith("openclaw:"):
-            # format: openclaw:<channel>:<target>
-            parts = target_channel.split(":", 2)
-            if len(parts) < 3:
-                return
-            channel = (parts[1] or "").strip()
-            target = (parts[2] or "").strip()
-            if not channel or not target:
-                return
-            subprocess.run(
-                [
-                    "openclaw",
-                    "message",
-                    "send",
-                    "--channel",
-                    channel,
-                    "--target",
-                    target,
-                    "--message",
-                    msg,
-                ],
-                timeout=12,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            return
-
-        if target_channel.startswith("webhook:"):
-            url = target_channel[len("webhook:"):].strip()
-            if not url:
-                return
-            import requests
-            requests.post(url, json={"text": msg, "result": result}, timeout=8)
-            return
-    except Exception:
-        # do not break gameplay flow when back-channel fails
-        pass
-
-
-def _collect_gameplay_back_channels(result: dict):
-    channels = set()
-    if BACK_CHANNEL:
-        channels.add(BACK_CHANNEL)
-
+def _collect_remote_gameplay_targets(result: dict):
     agents = canonicalize_agents_roster(load_agents_state())
     by_id = {
         (a.get("agentId") or "").strip(): a
         for a in agents
         if isinstance(a, dict)
     }
-    for aid in ((result.get("challenger_id") or "").strip(), (result.get("opponent_id") or "").strip()):
-        if not aid:
-            continue
-        back_channel = (by_id.get(aid, {}).get("backChannel") or "").strip()
-        if back_channel:
-            channels.add(back_channel)
 
-    return [c for c in channels if c]
+    targets = []
+    seen = set()
+    for aid in ((result.get("challenger_id") or "").strip(), (result.get("opponent_id") or "").strip()):
+        if not aid or aid in seen:
+            continue
+        seen.add(aid)
+        a = by_id.get(aid) or {}
+        if bool(a.get("isMain")):
+            continue
+        targets.append({
+            "agentId": aid,
+            "backChannel": (a.get("backChannel") or "").strip(),
+        })
+    return targets
 
 
 def _notify_back_channel_gameplay(result: dict):
-    channels = _collect_gameplay_back_channels(result)
-    if not channels:
+    targets = _collect_remote_gameplay_targets(result)
+    if not targets:
         return
 
     challenger_id = (result.get("challenger_id") or "").strip()
@@ -1779,8 +1738,23 @@ def _notify_back_channel_gameplay(result: dict):
     except Exception:
         msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
 
-    for c in channels:
-        _send_to_back_channel(c, msg, result)
+    for t in targets:
+        try:
+            enqueue_agent_message(
+                RPS_DB_FILE,
+                from_agent="star",
+                to_agent=t.get("agentId"),
+                msg_type="gameplay.log",
+                payload={
+                    "text": msg,
+                    "result": result,
+                    "backChannel": t.get("backChannel") or "",
+                },
+                ttl_seconds=600,
+            )
+        except Exception:
+            # do not break gameplay flow when enqueue fails
+            pass
 
 
 @app.route("/rps/challenge", methods=["POST"])
