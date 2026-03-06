@@ -43,6 +43,7 @@ _load_dotenv_if_present()
 JOIN_KEY = os.environ.get("OFFICE_JOIN_KEY", "")   # 必填：你的一次性 join key
 AGENT_NAME = os.environ.get("OFFICE_AGENT_NAME", "") # 必填：你在办公室里的名字
 OFFICE_URL = os.environ.get("OFFICE_URL", "https://office.example.com")  # 海辛办公室地址（一般不用改）
+BACK_CHANNEL = os.environ.get("BACK_CHANNEL", "").strip()  # 可选：回传通道（供服务端推送对局日志）
 
 # === 推送配置 ===
 # 旧版是固定 15s 推送，状态切换体感偏慢。
@@ -234,7 +235,8 @@ def do_join(local):
         "name": local.get("agentName", AGENT_NAME),
         "joinKey": local.get("joinKey", JOIN_KEY),
         "state": "idle",
-        "detail": "刚刚加入"
+        "detail": "刚刚加入",
+        "backChannel": BACK_CHANNEL,
     }
     r = requests.post(f"{OFFICE_URL}{JOIN_ENDPOINT}", json=payload, timeout=10)
     if r.status_code in (200, 201):
@@ -256,7 +258,8 @@ def do_push(local, status_data, quiet=False):
         "joinKey": local.get("joinKey", JOIN_KEY),
         "state": status_data.get("state", "idle"),
         "detail": status_data.get("detail", ""),
-        "name": local.get("agentName", AGENT_NAME)
+        "name": local.get("agentName", AGENT_NAME),
+        "backChannel": BACK_CHANNEL,
     }
     r = requests.post(f"{OFFICE_URL}{PUSH_ENDPOINT}", json=payload, timeout=10)
     if r.status_code in (200, 201):

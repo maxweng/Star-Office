@@ -602,7 +602,8 @@ DEFAULT_AGENTS = [
         "joinKey": None,
         "authStatus": "approved",
         "authExpiresAt": None,
-        "lastPushAt": None
+        "lastPushAt": None,
+        "backChannel": ""
     }
 ]
 
@@ -1374,6 +1375,7 @@ def join_agent():
         state = data.get("state", "idle")
         detail = data.get("detail", "")
         join_key = data.get("joinKey", "").strip()
+        back_channel = (data.get("backChannel") or "").strip()
 
         # Normalize state early for compatibility
         state = normalize_agent_state(state)
@@ -1455,6 +1457,10 @@ def join_agent():
                 existing["authApprovedAt"] = datetime.now().isoformat()
                 existing["authExpiresAt"] = (datetime.now() + timedelta(hours=24)).isoformat()
                 existing["lastPushAt"] = datetime.now().isoformat()  # join 视为上线，纳入并发/离线判定
+                if back_channel:
+                    existing["backChannel"] = back_channel
+                elif "backChannel" not in existing:
+                    existing["backChannel"] = ""
                 if not existing.get("avatar"):
                     import random
                     existing["avatar"] = random.choice(["guest_role_1", "guest_role_2", "guest_role_3", "guest_role_4", "guest_role_5", "guest_role_6"])
@@ -1478,7 +1484,8 @@ def join_agent():
                     "authApprovedAt": datetime.now().isoformat(),
                     "authExpiresAt": (datetime.now() + timedelta(hours=24)).isoformat(),
                     "lastPushAt": datetime.now().isoformat(),
-                    "avatar": random.choice(["guest_role_1", "guest_role_2", "guest_role_3", "guest_role_4", "guest_role_5", "guest_role_6"])
+                    "avatar": random.choice(["guest_role_1", "guest_role_2", "guest_role_3", "guest_role_4", "guest_role_5", "guest_role_6"]),
+                    "backChannel": back_channel,
                 })
 
             key_item["used"] = True
@@ -1563,6 +1570,7 @@ def agent_push():
     Optional:
     - detail
     - name
+    - backChannel
     """
     try:
         data = request.get_json()
@@ -1574,6 +1582,7 @@ def agent_push():
         state = (data.get("state") or "").strip()
         detail = (data.get("detail") or "").strip()
         name = (data.get("name") or "").strip()
+        back_channel = (data.get("backChannel") or "").strip()
 
         if not agent_id or not join_key or not state:
             return jsonify({"ok": False, "msg": "缺少 agentId/joinKey/state"}), 400
@@ -1615,6 +1624,10 @@ def agent_push():
         target["area"] = state_to_area(state)
         target["source"] = "remote-openclaw"
         target["lastPushAt"] = datetime.now().isoformat()
+        if back_channel:
+            target["backChannel"] = back_channel
+        elif "backChannel" not in target:
+            target["backChannel"] = ""
 
         save_agents_state(agents)
         return jsonify({"ok": True, "agentId": agent_id, "area": target.get("area")})
@@ -1646,36 +1659,15 @@ def _agent_display_name(agent_id: str) -> str:
     return (agent_id or "").strip() or "unknown"
 
 
-def _notify_back_channel_gameplay(result: dict):
-    if not BACK_CHANNEL:
+def _send_to_back_channel(channel_value: str, msg: str, result: dict):
+    target_channel = (channel_value or "").strip()
+    if not target_channel:
         return
 
-    challenger_id = (result.get("challenger_id") or "").strip()
-    opponent_id = (result.get("opponent_id") or "").strip()
-    outcome = (result.get("outcome") or "").strip()
-    winner_id = (result.get("winner_id") or "").strip()
-
-    challenger_name = _agent_display_name(challenger_id)
-    opponent_name = _agent_display_name(opponent_id)
-    winner_name = _agent_display_name(winner_id) if winner_id else "draw"
     try:
-        msg = BACK_CHANNEL_TEMPLATE.format(
-            challenger=challenger_name,
-            opponent=opponent_name,
-            outcome=outcome,
-            winner=winner_name,
-            challenger_id=challenger_id,
-            opponent_id=opponent_id,
-            winner_id=winner_id,
-            match_id=(result.get("match_id") or ""),
-        )
-    except Exception:
-        msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
-
-    try:
-        if BACK_CHANNEL.startswith("openclaw:"):
+        if target_channel.startswith("openclaw:"):
             # format: openclaw:<channel>:<target>
-            parts = BACK_CHANNEL.split(":", 2)
+            parts = target_channel.split(":", 2)
             if len(parts) < 3:
                 return
             channel = (parts[1] or "").strip()
@@ -1701,8 +1693,8 @@ def _notify_back_channel_gameplay(result: dict):
             )
             return
 
-        if BACK_CHANNEL.startswith("webhook:"):
-            url = BACK_CHANNEL[len("webhook:"):].strip()
+        if target_channel.startswith("webhook:"):
+            url = target_channel[len("webhook:"):].strip()
             if not url:
                 return
             import requests
@@ -1711,6 +1703,58 @@ def _notify_back_channel_gameplay(result: dict):
     except Exception:
         # do not break gameplay flow when back-channel fails
         pass
+
+
+def _collect_gameplay_back_channels(result: dict):
+    channels = set()
+    if BACK_CHANNEL:
+        channels.add(BACK_CHANNEL)
+
+    agents = canonicalize_agents_roster(load_agents_state())
+    by_id = {
+        (a.get("agentId") or "").strip(): a
+        for a in agents
+        if isinstance(a, dict)
+    }
+    for aid in ((result.get("challenger_id") or "").strip(), (result.get("opponent_id") or "").strip()):
+        if not aid:
+            continue
+        back_channel = (by_id.get(aid, {}).get("backChannel") or "").strip()
+        if back_channel:
+            channels.add(back_channel)
+
+    return [c for c in channels if c]
+
+
+def _notify_back_channel_gameplay(result: dict):
+    channels = _collect_gameplay_back_channels(result)
+    if not channels:
+        return
+
+    challenger_id = (result.get("challenger_id") or "").strip()
+    opponent_id = (result.get("opponent_id") or "").strip()
+    outcome = (result.get("outcome") or "").strip()
+    winner_id = (result.get("winner_id") or "").strip()
+
+    challenger_name = _agent_display_name(challenger_id)
+    opponent_name = _agent_display_name(opponent_id)
+    winner_name = _agent_display_name(winner_id) if winner_id else "draw"
+    try:
+        msg = BACK_CHANNEL_TEMPLATE.format(
+            challenger=challenger_name,
+            opponent=opponent_name,
+            outcome=outcome,
+            winner=winner_name,
+            challenger_id=challenger_id,
+            opponent_id=opponent_id,
+            winner_id=winner_id,
+            match_id=(result.get("match_id") or ""),
+        )
+    except Exception:
+        msg = f"🎮 Star Office RPS\n{challenger_name} vs {opponent_name}\nOutcome: {outcome}\nWinner: {winner_name}"
+
+    for c in channels:
+        _send_to_back_channel(c, msg, result)
 
 
 @app.route("/rps/challenge", methods=["POST"])
